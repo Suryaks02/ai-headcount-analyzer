@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Headcount & Capacity Analyzer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    
+    <style>
+:root { 
+  --neon-green: #00ffcc; 
+  --alarm-red: #ff4444; 
+  --bg-dark: #121212;
+  --gradient-bg: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+  --hero-gold: #ffd700;
+}
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-dark); color: white; margin: 0; text-align: center; transition: background 0.3s; }
+        
+        /* Home */
+#home-section { 
+  min-height: 100vh; 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center; 
+  align-items: center; 
+  background: var(--gradient-bg);
+  animation: fadeIn 1.5s ease-out;
+  padding: 20px;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+.hero-heading {
+  font-size: clamp(3rem, 8vw, 6rem);
+  background: linear-gradient(45deg, var(--neon-green), var(--hero-gold), var(--neon-green));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 20px 0;
+  text-shadow: 0 0 30px rgba(0, 255, 204, 0.5);
+  animation: glow 2s ease-in-out infinite alternate;
+}
+@keyframes glow { from { filter: drop-shadow(0 0 20px var(--neon-green)); } to { filter: drop-shadow(0 0 40px var(--neon-green)); } }
+.hero-subtitle { font-size: 1.5rem; opacity: 0.9; margin-bottom: 50px; max-width: 600px; }
+.btn-container { display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; }
+.mode-btn { 
+  background: linear-gradient(145deg, #222 0%, #333 100%); 
+  border: 2px solid #444; 
+  padding: 25px 40px; 
+  border-radius: 20px; 
+  font-size: 1.3rem;
+  cursor: pointer; 
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  min-width: 280px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.mode-btn:hover { 
+  border-color: var(--neon-green); 
+  transform: translateY(-15px) scale(1.05); 
+  box-shadow: 0 20px 50px rgba(0, 255, 204, 0.3);
+}
+.mode-btn h3 { 
+  color: var(--neon-green); 
+  margin: 0 0 10px 0; 
+  font-size: 1.8rem;
+}
+
+        /* Camera */
+        #camera-section { display: none; padding: 20px; }
+        .video-wrapper { position: relative; display: inline-block; margin-top: 20px; }
+        video, canvas { border-radius: 15px; }
+        canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+        
+        /* Status */
+        #status-bar { font-size: 24px; font-weight: bold; margin: 20px; padding: 15px; border-radius: 10px; display: none; }
+        .overcrowd-alert { background: var(--alarm-red); color: white; animation: blink 0.5s infinite; font-size: 40px !important; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        input { background: #333; color: white; border: 1px solid var(--neon-green); padding: 5px; font-size: 18px; width: 60px; border-radius: 5px; }
+        .back-btn { background: #444; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-bottom: 20px; }
+
+        /* Image Upload */
+        #image-section { display: none; padding: 20px; }
+        .upload-area {
+          border: 3px dashed var(--neon-green);
+          border-radius: 15px;
+          padding: 40px;
+          margin: 20px 0;
+          background: rgba(0,255,204,0.05);
+          transition: all 0.3s;
+          cursor: pointer;
+        }
+        .upload-area:hover, .upload-area.dragover { 
+          background: rgba(0,255,204,0.15); 
+          border-color: #00ccaa;
+          transform: scale(1.02);
+        }
+        .image-wrapper { position: relative; display: inline-block; margin-top: 20px; }
+        #upload-image { max-width: 640px; max-height: 480px; border-radius: 15px; object-fit: contain; }
+        #image-overlay { position: absolute; top: 0; left: 0; pointer-events: none; border-radius: 15px; }
+        #analyze-btn { 
+          background: linear-gradient(45deg, var(--neon-green), #00ccaa); 
+          color: #000; 
+          border: none; 
+          padding: 15px 30px; 
+          border-radius: 10px; 
+          font-size: 18px; 
+          font-weight: bold; 
+          cursor: pointer; 
+          margin: 20px; 
+          transition: 0.3s;
+        }
+        #analyze-btn:hover:not(:disabled) { transform: scale(1.1); box-shadow: 0 0 30px var(--neon-green); }
+        #analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Logs */
+        #logs-section { display: none; padding: 20px; max-height: 80vh; overflow: auto; }
+        .logs-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .logs-table th, .logs-table td { padding: 10px; border: 1px solid #444; text-align: left; }
+        .logs-table th { background: #333; }
+        #view-logs-btn { background: var(--neon-green); color: black; border: none; padding: 15px 30px; border-radius: 10px; font-size: 18px; cursor: pointer; margin: 20px; }
+    </style>
+</head>
+<body>
+    <div id="home-section">
+        <h1 class="hero-heading">AI HEADCOUNT & ROOM CAPACITY ANALYZER</h1>
+        <p class="hero-subtitle">Real-time AI-powered people counting with backend logging. Webcam + image upload. Capacity alerts. Full stack ready.</p>
+        <div class="btn-container">
+            <div class="mode-btn" onclick="startApp('count')">
+                <h3>👥 Headcount</h3>
+                <p>Live webcam counting</p>
+            </div>
+            <div class="mode-btn" onclick="startApp('capacity')">
+                <h3>🚫 Capacity Guard</h3>
+                <p>Overcrowd alerts</p>
+            </div>
+            <div class="mode-btn" onclick="startApp('image')">
+                <h3>🖼️ Image Upload</h3>
+                <p>Photo analysis + upload</p>
+            </div>
+            <div class="mode-btn" onclick="showLogs()">
+                <h3>📊 View Logs</h3>
+                <p>Backend data & history</p>
+            </div>
+        </div>
+        <p style="margin-top: 60px; opacity: 0.7; font-size: 0.9rem;">TensorFlow.js + Express Backend • Run `npm start` for full stack</p>
+    </div>
+
+    <div id="camera-section">
+        <button class="back-btn" onclick="showHome()">⬅ Back</button>
+        <div id="status-bar">SAFE</div>
+        <div id="capacity-settings" style="margin-bottom: 15px;">
+            Target Capacity: <input type="number" id="maxPeople" value="3" min="0">
+        </div>
+        <h2>People: <span id="live-count" style="color:var(--neon-green)">0</span></h2>
+        <div class="video-wrapper">
+            <video id="webcam" width="640" height="480" autoplay playsinline muted></video>
+            <canvas id="overlay" width="640" height="480"></canvas>
+        </div>
+    </div>
+
+    <div id="image-section">
+        <button class="back-btn" onclick="showHome()">⬅ Back</button>
+        <div id="image-status-bar">READY</div>
+        <div id="image-capacity-settings" style="margin-bottom: 15px;">
+            Target Capacity: <input type="number" id="image-maxPeople" value="3" min="0">
+        </div>
+        <h2>People: <span id="image-live-count" style="color:var(--neon-green)">0</span></h2>
+        <div class="upload-area" onclick="document.getElementById('image-upload').click()">
+            📸 Click/drag image to upload & analyze
+            <input type="file" id="image-upload" accept="image/*" style="display: none;">
+        </div>
+        <div class="image-wrapper" style="display: none;">
+            <img id="upload-image" alt="Uploaded image">
+            <canvas id="image-overlay" width="640" height="480"></canvas>
+        </div>
+        <button id="analyze-btn" onclick="analyzeImage()" disabled>🔍 Analyze Local</button>
+        <button id="upload-btn" onclick="uploadToBackend()" disabled style="background: linear-gradient(45deg, #ff6b6b, #ee5a24); margin-left: 10px;">☁️ Upload to Backend</button>
+    </div>
+
+    <div id="logs-section">
+        <button class="back-btn" onclick="showHome()">⬅ Back</button>
+        <button id="view-logs-btn" onclick="loadLogs()">🔄 Refresh Logs</button>
+        <div id="logs-display">
+            <table class="logs-table">
+                <thead><tr><th>ID</th><th>Time</th><th>Count</th><th>Mode</th><th>Actions</th></tr></thead>
+                <tbody id="logs-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'count';
+        let imageFile = null;
+        const videoEl = document.getElementById('webcam');
+        const overlayCtx = {};
+        let imageModel = null;
+
+        // Backend API functions
+        async function saveCount(count, mode) {
+          try {
+            const response = await fetch('/api/update-count', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({count, mode})
+            });
+            if (response.ok) console.log('✅ Count saved');
+          } catch (err) {
+            console.warn('Backend unavailable:', err);
+          }
+        }
+
+        async function uploadToBackend() {
+          if (!imageFile) return alert('No image selected');
+          const formData = new FormData();
+          formData.append('image', imageFile);
+          try {
+            const response = await fetch('/api/upload-image', {
+              method: 'POST',
+              body: formData
+            });
+            const result = await response.json();
+            if (response.ok) {
+              alert(`✅ Uploaded: ${result.filename}`);
+              loadLogs();
+            } else {
+              alert('Upload failed: ' + result.error);
+            }
+          } catch (err) {
+            alert('Upload error: ' + err.message);
+            console.error(err);
+          }
+        }
+
+        async function loadLogs() {
+          try {
+            const response = await fetch('/api/headcounts');
+            const logs = await response.json();
+            const tbody = document.getElementById('logs-tbody');
+            tbody.innerHTML = logs.map(log => `
+              <tr>
+                <td>${log.id}</td>
+                <td>${log.time}</td>
+                <td style="color: var(--neon-green)">${log.count}</td>
+                <td>${log.mode}</td>
+                <td><button onclick="deleteLog(${log.id})" style="background: var(--alarm-red); color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Delete</button></td>
+              </tr>
+            `).join('');
+          } catch (err) {
+            document.getElementById('logs-display').innerHTML = '<p style="color: orange">Logs unavailable (start backend?)</p>';
+          }
+        }
+
+        async function deleteLog(id) {
+          if (confirm('Delete this log?')) {
+            try {
+              await fetch(`/api/headcounts/${id}`, {method: 'DELETE'});
+              loadLogs();
+            } catch (err) {
+              alert('Delete failed');
+            }
+          }
+        }
+
+        function showHome() {
+          document.querySelectorAll('[id$="-section"]').forEach(s => s.style.display = 'none');
+          document.getElementById('home-section').style.display = 'flex';
+        }
+
+        function showLogs() {
+          document.querySelectorAll('[id$="-section"]').forEach(s => s.style.display = 'none');
+          document.getElementById('logs-section').style.display = 'block';
+          loadLogs();
+        }
+
+        async function startApp(mode) {
+          currentMode = mode;
+          document.querySelectorAll('[id$="-section"]').forEach(s => s.style.display = 'none');
+          
+          if (mode === 'logs') {
+            showLogs();
+            return;
+          } else if (mode === 'count' || mode === 'capacity') {
+            const section = document.getElementById('camera-section');
+            section.style.display = 'block';
+            document.getElementById('capacity-settings').style.display = mode === 'count' ? 'none' : 'block';
+
+            const video = videoEl;
+            const canvas = document.getElementById('overlay');
+            overlayCtx.camera = canvas.getContext('2d');
+
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+              video.srcObject = stream;
+              video.play();
+
+              const model = await cocoSsd.load();
+              const statusBar = document.getElementById('status-bar');
+              statusBar.style.display = 'block';
+              statusBar.style.background = '#222';
+              statusBar.innerText = 'SYSTEM ACTIVE';
+
+              setInterval(async () => {
+                const predictions = await model.detect(video);
+                overlayCtx.camera.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const people = predictions.filter(p => p.class === 'person');
+                const count = people.length;
+                document.getElementById('live-count').innerText = count;
+                await saveCount(count, currentMode);
+
+                // Capacity check
+                if (currentMode === 'capacity') {
+                  const max = parseInt(document.getElementById('maxPeople').value);
+                  if (count > max) {
+                    statusBar.innerText = '🚨 OVERCROWDED! 🚨';
+                    statusBar.className = 'overcrowd-alert';
+                    document.body.style.background = '#300';
+                  } else if (count === max && max !== 0) {
+                    statusBar.innerText = '⚠️ FULL CAPACITY';
+                    statusBar.className = '';
+                    statusBar.style.background = '#cc8800';
+                  } else {
+                    statusBar.innerText = '✅ SAFE';
+                    statusBar.className = '';
+                    statusBar.style.background = '#006633';
+                  }
+                }
+
+                people.forEach(p => {
+                  overlayCtx.camera.strokeStyle = '#00ffcc';
+                  overlayCtx.camera.lineWidth = 3;
+                  overlayCtx.camera.strokeRect(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
+                });
+              }, 1000);
+            } catch (err) {
+              console.error('Camera error:', err);
+              alert('Camera access denied');
+            }
+          } else if (mode === 'image') {
+            document.getElementById('image-section').style.display = 'block';
+          }
+        }
+
+        // Image handling
+        document.addEventListener('DOMContentLoaded', () => {
+          const imageUpload = document.getElementById('image-upload');
+          const uploadImage = document.getElementById('upload-image');
+          const imageWrapper = document.querySelector('.image-wrapper');
+          const analyzeBtn = document.getElementById('analyze-btn');
+          const uploadBtn = document.getElementById('upload-btn');
+          const imageOverlay = document.getElementById('image-overlay');
+          overlayCtx.image = imageOverlay.getContext('2d');
+
+          imageUpload.addEventListener('change', (e) => {
+            imageFile = e.target.files[0];
+            if (imageFile && imageFile.type.startsWith('image/')) {
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                uploadImage.src = e.target.result;
+                imageWrapper.style.display = 'inline-block';
+                analyzeBtn.disabled = false;
+                uploadBtn.disabled = false;
+                overlayCtx.image.clearRect(0, 0, imageOverlay.width, imageOverlay.height);
+                document.getElementById('image-live-count').innerText = '0';
+              };
+              reader.readAsDataURL(imageFile);
+            }
+          });
+
+          // Drag & drop
+          const uploadArea = document.querySelector('.upload-area');
+          ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+          });
+          ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => uploadArea.classList.add('dragover'), false);
+          });
+          ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => uploadArea.classList.remove('dragover'), false);
+          });
+          uploadArea.addEventListener('drop', handleDrop, false);
+
+          function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          function handleDrop(e) {
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+              imageUpload.files = e.dataTransfer.files;
+              imageUpload.dispatchEvent(new Event('change'));
+            }
+          }
+        });
+
+        async function analyzeImage() {
+          const analyzeBtn = document.getElementById('analyze-btn');
+          const imageStatusBar = document.getElementById('image-status-bar');
+          analyzeBtn.disabled = true;
+          analyzeBtn.innerText = 'Analyzing...';
+
+          try {
+            imageStatusBar.innerText = 'Loading AI...';
+            imageStatusBar.style.display = 'block';
+            if (!imageModel) imageModel = await cocoSsd.load();
+            imageStatusBar.innerText = 'Analyzing...';
+
+            const image = document.getElementById('upload-image');
+            const canvas = document.getElementById('image-overlay');
+            const ctx = overlayCtx.image;
+            canvas.width = 640;
+            canvas.height = 480;
+            ctx.drawImage(image, 0, 0, 640, 480);
+
+            const predictions = await imageModel.detect(image);
+            ctx.clearRect(0, 0, 640, 480);
+            
+            const people = predictions.filter(p => p.class === 'person');
+            const count = people.length;
+            document.getElementById('image-live-count').innerText = count;
+            await saveCount(count, 'image');
+
+            // Capacity
+            const max = parseInt(document.getElementById('image-maxPeople').value);
+            if (count > max) {
+              imageStatusBar.innerText = '🚨 OVERCROWDED!';
+              imageStatusBar.className = 'overcrowd-alert';
+            } else if (count === max && max !== 0) {
+              imageStatusBar.innerText = '⚠️ FULL';
+              imageStatusBar.style.background = '#cc8800';
+            } else {
+              imageStatusBar.innerText = '✅ SAFE';
+              imageStatusBar.style.background = '#006633';
+            }
+
+            people.forEach(p => {
+              ctx.strokeStyle = '#00ffcc';
+              ctx.lineWidth = 3;
+              ctx.strokeRect(
+                (p.bbox[0] / image.naturalWidth) * 640,
+                (p.bbox[1] / image.naturalHeight) * 480,
+                (p.bbox[2] / image.naturalWidth) * 640,
+                (p.bbox[3] / image.naturalHeight) * 480
+              );
+            });
+
+            analyzeBtn.innerText = 'Re-analyze';
+            analyzeBtn.disabled = false;
+          } catch (err) {
+            console.error(err);
+            imageStatusBar.innerText = 'Error: ' + err.message;
+            analyzeBtn.disabled = false;
+            analyzeBtn.innerText = 'Retry';
+          }
+        }
+    </script>
+</body>
+</html>
